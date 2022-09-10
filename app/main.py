@@ -1,11 +1,12 @@
-import uvicorn
 from decimal import Decimal
-from fastapi import FastAPI, Query, Path, File, UploadFile, status, HTTPException, Depends
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from enum import Enum
-from pydantic import BaseModel, Field, HttpUrl
 
+import uvicorn
+from fastapi import (Depends, FastAPI, File, HTTPException, Path, Query,
+                     UploadFile, status)
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field, HttpUrl
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -234,6 +235,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     
     return {"access_token": member.membername, "token_type": "bearer"}
 
+
 @app.get("/users/me")
 async def get_me(current_member: Member = Depends(get_current_active_member)):
     return current_member
@@ -242,4 +244,4 @@ async def get_me(current_member: Member = Depends(get_current_active_member)):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
+    
