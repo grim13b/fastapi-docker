@@ -1,6 +1,8 @@
+import uvicorn
 from decimal import Decimal
-from fastapi import FastAPI, Query, Path, File, UploadFile, status
+from fastapi import FastAPI, Query, Path, File, UploadFile, status, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from enum import Enum
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -146,3 +148,98 @@ async def get_filesize(file: bytes = File()):
 @app.put("/files/upload")
 async def put_file(file: UploadFile):
     return {"file_name": file.filename}
+
+
+fake_user_db = {
+    "johndoe": {
+        "membername": "johndoe",
+        "full_name": "John Doe",
+        "email": "johndoe@example.com",
+        "hashed_password": "fakehashedsecret1",
+        "disabled": False
+    },
+    "alice": {
+        "membername": "alice",
+        "full_name": "Alice Wonderson",
+        "email": "alice@example.com",
+        "hashed_password": "fakehashedsecret2",
+        "disabled": True
+    }
+}
+
+
+def fake_hash_password(password: str):
+    return "fakehashed" + password
+
+
+oauth2_schema = OAuth2PasswordBearer(tokenUrl="token")
+
+
+class Member(BaseModel):
+    membername: str
+    email: str | None = None
+    full_name: str | None = None
+    disabled: bool | None = None
+
+class MemberInDB(Member):
+    hashed_password: str
+
+def get_member(db, membername: str):
+    if membername in db:
+        member_dict = db[membername]
+        return MemberInDB(**member_dict)
+
+def fake_decode_token(token):
+    member = get_member(fake_user_db, token)
+    return member
+
+
+async def get_current_menber(token: str = Depends(oauth2_schema)):
+    member = fake_decode_token(token)
+    if not member:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    return member
+
+
+async def get_current_active_member(current_member: Member = Depends(get_current_menber)):
+    if current_member.disabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Inactive member"
+        )
+    return current_member
+
+
+@app.post("/token")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    member_dict = fake_user_db.get(form_data.username)
+
+    if not member_dict:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect username or password"
+        )
+
+    member = MemberInDB(**member_dict)
+    hashed_password = fake_hash_password(form_data.password)
+    if not hashed_password == member.hashed_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect username or password"
+        )
+    
+    return {"access_token": member.membername, "token_type": "bearer"}
+
+@app.get("/users/me")
+async def get_me(current_member: Member = Depends(get_current_active_member)):
+    return current_member
+
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
